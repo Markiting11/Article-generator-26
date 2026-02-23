@@ -1,0 +1,6 @@
+{
+  "name": "SEO Article Generator",
+  "description": "An AI-powered application that generates unique, SEO-optimized articles based on a given URL and keywords. It provides content formatting options and allows users to download or copy the generated text.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
