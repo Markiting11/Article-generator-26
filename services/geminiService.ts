@@ -3,11 +3,11 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { ArticleData, InputFormData } from '../types';
 
-if (!process.env.API_KEY) {
-    throw new Error("API_KEY environment variable not set");
+if (!process.env.API_KEY || process.env.API_KEY === '') {
+    console.error("CRITICAL ERROR: GEMINI_API_KEY is not defined. Please set it in your environment variables and RE-DEPLOY.");
 }
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'MISSING_KEY' });
 
 /**
  * A wrapper function to handle API rate limiting with exponential backoff.
