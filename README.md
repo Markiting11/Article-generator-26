@@ -1,20 +1,27 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# SEO Article Generator
 
-# Run and deploy your AI Studio app
+An AI-powered application that generates unique, SEO-optimized articles based on a given URL and keywords.
 
-This contains everything you need to run your app locally.
+## Deployment
 
-View your app in AI Studio: https://ai.studio/apps/bceed403-851c-4206-9779-81e10738fdcc
+This project is optimized for deployment on **Vercel** and **Netlify**.
 
-## Run Locally
+### Environment Variables
 
-**Prerequisites:**  Node.js
+You must set the following environment variable on your deployment platform:
 
+- `GEMINI_API_KEY`: Your Google Gemini API Key.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### Vercel Deployment
+
+1. Connect your repository to Vercel.
+2. Vercel will automatically detect the Vite project.
+3. Add the `GEMINI_API_KEY` in the project settings under "Environment Variables".
+4. Deploy!
+
+### Netlify Deployment
+
+1. Connect your repository to Netlify.
+2. Set the build command to `npm run build` and the publish directory to `dist`.
+3. Add the `GEMINI_API_KEY` in the site settings under "Environment Variables".
+4. Deploy!
