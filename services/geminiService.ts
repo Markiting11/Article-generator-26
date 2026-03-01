@@ -23,12 +23,14 @@ const withRetry = async <T>(apiCall: () => Promise<T>, maxRetries = 3): Promise<
     } catch (error) {
       lastError = error as Error;
       // Check if it's a rate limit error (429)
-      if (error instanceof Error && (error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED'))) {
-        if (attempt === maxRetries) {
-          // Don't wait on the last attempt, just let it fail
+      const isQuotaError = error instanceof Error && (error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('quota'));
+      
+      if (isQuotaError) {
+        if (attempt === maxRetries || error.message.includes('RESOURCE_EXHAUSTED')) {
+          // Don't retry if it's a hard quota limit (RESOURCE_EXHAUSTED)
           break;
         }
-        // Exponential backoff with jitter to spread out retries
+        // Exponential backoff for temporary rate limits
         const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
         console.warn(`Rate limit hit. Retrying in ${Math.round(delay / 1000)}s... (Attempt ${attempt}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, delay));

@@ -9,20 +9,27 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');
     const [error, setError] = useState('');
+    const [warning, setWarning] = useState('');
     const [generatedContent, setGeneratedContent] = useState<ArticleData | null>(null);
     const [currentImageSrc, setCurrentImageSrc] = useState<string>('');
 
     const handleGenerate = async (data: InputFormData) => {
         setIsLoading(true);
         setError('');
+        setWarning('');
         setGeneratedContent(null);
         setCurrentImageSrc('');
 
         try {
             if (data.autoGenerateImage) {
                 setLoadingMessage('Generating header image...');
-                const imageUrl = await generateImage(data.keywords);
-                setCurrentImageSrc(imageUrl);
+                try {
+                    const imageUrl = await generateImage(data.keywords);
+                    setCurrentImageSrc(imageUrl);
+                } catch (imgErr) {
+                    console.error("Image generation failed:", imgErr);
+                    setWarning('Image generation failed (likely due to API quota). Generating article only...');
+                }
             }
 
             setLoadingMessage('Generating article content...');
@@ -56,6 +63,13 @@ const App: React.FC = () => {
                     loadingMessage={loadingMessage} 
                     onSubmit={handleGenerate} 
                 />
+
+                {warning && (
+                    <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 mt-6 rounded-r-lg" role="alert">
+                        <p className="font-bold">Notice</p>
+                        <p>{warning}</p>
+                    </div>
+                )}
 
                 {error && (
                     <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mt-6 rounded-r-lg" role="alert">
