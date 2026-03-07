@@ -1,10 +1,10 @@
 
 import { ArticleData, InputFormData } from '../types';
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.API_KEY;
+const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 
-if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === '') {
-    console.error("CRITICAL ERROR: OPENROUTER_API_KEY is not defined. Please set it in your environment variables and RE-DEPLOY.");
+if (!OPENROUTER_API_KEY) {
+    console.error("CRITICAL ERROR: VITE_OPENROUTER_API_KEY is not defined. Please set it in your environment variables and RE-DEPLOY.");
 }
 
 /**
