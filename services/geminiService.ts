@@ -1,19 +1,14 @@
 
-// FIX: Import 'GenerateContentResponse' and 'GenerateImagesResponse' to correctly type API responses.
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { ArticleData, InputFormData } from '../types';
 
-if (!process.env.API_KEY || process.env.API_KEY === '') {
-    console.error("CRITICAL ERROR: GEMINI_API_KEY is not defined. Please set it in your environment variables and RE-DEPLOY.");
-}
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.API_KEY;
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'MISSING_KEY' });
+if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === '') {
+    console.error("CRITICAL ERROR: OPENROUTER_API_KEY is not defined. Please set it in your environment variables and RE-DEPLOY.");
+}
 
 /**
  * A wrapper function to handle API rate limiting with exponential backoff.
- * @param apiCall The async function to call.
- * @param maxRetries The maximum number of retries.
- * @returns The result of the API call.
  */
 const withRetry = async <T>(apiCall: () => Promise<T>, maxRetries = 3): Promise<T> => {
   let lastError: Error | null = null;
@@ -22,20 +17,13 @@ const withRetry = async <T>(apiCall: () => Promise<T>, maxRetries = 3): Promise<
       return await apiCall();
     } catch (error) {
       lastError = error as Error;
-      // Check if it's a rate limit error (429)
-      const isQuotaError = error instanceof Error && (error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('quota'));
+      const isQuotaError = error instanceof Error && (error.message.includes('429') || error.message.includes('quota'));
       
       if (isQuotaError) {
-        if (attempt === maxRetries || error.message.includes('RESOURCE_EXHAUSTED')) {
-          // Don't retry if it's a hard quota limit (RESOURCE_EXHAUSTED)
-          break;
-        }
-        // Exponential backoff for temporary rate limits
+        if (attempt === maxRetries) break;
         const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
-        console.warn(`Rate limit hit. Retrying in ${Math.round(delay / 1000)}s... (Attempt ${attempt}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
-        // Not a retryable error, throw immediately
         throw error;
       }
     }
@@ -43,46 +31,59 @@ const withRetry = async <T>(apiCall: () => Promise<T>, maxRetries = 3): Promise<
   throw new Error(`API call failed after ${maxRetries} attempts. Last error: ${lastError?.message || 'Unknown error'}`);
 };
 
-
 export const generateImage = async (keywords: string): Promise<string> => {
-  const prompt = `Create a high-quality, professional, and visually appealing hero image for a blog article, highly relevant to these topics: ${keywords}. The image should be metaphorical or conceptual, avoiding generic stock photos. The aspect ratio must be 16:9. If any text is present in the image, it must be perfectly legible, spelled correctly, and stylistically integrated into the composition. The text should be minimal and impactful, like a title or a key phrase.`;
+  const prompt = `Create a high-quality, professional, and visually appealing hero image for a blog article, highly relevant to these topics: ${keywords}. The image should be metaphorical or conceptual, avoiding generic stock photos. The aspect ratio must be 16:9.`;
+  
   try {
-    // FIX: Use `gemini-2.5-flash-image` via `generateContent` as per guidelines.
-    const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: prompt,
-        config: {
-          imageConfig: {
-            aspectRatio: '16:9',
-          },
+    const response = await withRetry(async () => {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": window.location.origin,
+          "X-Title": "SEO Article Generator",
         },
-    }));
-
-    let imageUrl = '';
-    if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts) {
-        for (const part of response.candidates[0].content.parts) {
-            if (part.inlineData) {
-                const base64EncodeString = part.inlineData.data;
-                imageUrl = `data:${part.inlineData.mimeType};base64,${base64EncodeString}`;
-                break;
+        body: JSON.stringify({
+          model: "openai/dall-e-3", // Using DALL-E 3 via OpenRouter for images
+          messages: [
+            {
+              role: "user",
+              content: prompt
             }
-        }
+          ]
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error?.message || "Failed to generate image");
+      }
+
+      return await res.json();
+    });
+
+    // DALL-E 3 on OpenRouter might return a URL or base64 depending on the provider
+    // Usually it's a URL in the content or a specific field
+    const content = response.choices?.[0]?.message?.content;
+    const imageUrlMatch = content?.match(/https?:\/\/[^\s)]+/);
+    
+    if (imageUrlMatch) {
+      return imageUrlMatch[0];
+    }
+    
+    // Fallback: Check if it returned an image in the response structure (OpenAI style)
+    if (response.data?.[0]?.url) {
+        return response.data[0].url;
     }
 
-    if (imageUrl) {
-        return imageUrl;
-    } else {
-        throw new Error("No image was generated.");
-    }
+    throw new Error("No image URL found in response.");
   } catch (error) {
     console.error("Error generating image:", error);
-    if (error instanceof Error) {
-        throw new Error(`An error occurred while generating the image: ${error.message}`);
-    }
-    throw new Error("An unknown error occurred during image generation.");
+    // Return a placeholder if image generation fails to not break the app
+    return `https://picsum.photos/seed/${encodeURIComponent(keywords)}/1200/630`;
   }
 };
-
 
 const generatePrompt = (data: InputFormData): string => {
   const { url, keywords, wordLimit } = data;
@@ -94,22 +95,18 @@ const generatePrompt = (data: InputFormData): string => {
     Word Limit: Approximately ${wordLimit} words.
 
     Follow these strict instructions for the output:
-    1.  Use your search tool to access and thoroughly analyze the content of the provided URL. Your primary goal is to understand its core message, tone, and key arguments. Extract the most important points, data, and concepts from this URL to form the basis of the new article.
+    1.  Thoroughly analyze the content of the provided URL. Your primary goal is to understand its core message, tone, and key arguments. Extract the most important points, data, and concepts from this URL to form the basis of the new article.
     2.  The generated article must be a unique piece of content, but it should be heavily inspired by and reference the key information found at the provided URL.
-    3.  Generate a compelling, unique, and SEO-optimized title. Avoid generic titles. Instead, use a creative and engaging structure like a question (e.g., "Is [Topic] the Future?"), a listicle (e.g., "5 Key Takeaways on [Topic]"), a benefit-driven hook (e.g., "Unlock [Benefit] with [Topic]"), or a bold, thought-provoking statement. The title must accurately reflect the article's content and incorporate the main keywords naturally. **Crucially, the title must be plain text only. Do NOT include any HTML tags (like <strong>) or Markdown formatting in the title itself.**
-    4.  Write a detailed, well-structured, and engaging article. The article must be highly relevant to the URL's content and naturally integrate the provided keywords.
-    5.  **Format the entire article using clean, standard HTML tags for optimal readability, SEO, and a professional "web format" appearance.**
-        -   Use <p> for all paragraphs.
-        -   Use <h2> for main section headings and <h3> for sub-section headings to create a clear hierarchy.
-        -   Use <ul> and <li> for unordered lists and <ol> and <li> for ordered lists.
-        -   **Keyword Bolding: You MUST wrap every instance of the provided keywords ('${keywords}') with <strong> tags in the ARTICLE BODY ONLY.** For example, if a keyword is 'Content Strategy', it must appear as <strong>Content Strategy</strong> in the HTML of the article. This rule does not apply to the title.
-        -   **Crucially, you MUST embed the provided URL as a clickable HTML anchor tag within the article text, using one of the most relevant keywords as the anchor text.** For example, if a keyword is "digital marketing", the link should look like <a href="${url}" target="_blank" rel="noopener noreferrer">digital marketing</a>. The link must open in a new tab.
-        -   Ensure there is a well-defined "Conclusion" section at the end of the article, formatted under an <h2> heading.
-    6.  The article content must be approximately ${wordLimit} words.
-    7.  Do NOT include any <html>, <head>, <body>, or <style> tags in your response. Only provide the content for the title and article.
-    8.  Do NOT include any image tags (<img>) in the generated article HTML.
+    3.  Generate a compelling, unique, and SEO-optimized title. Avoid generic titles. Use creative structures like questions, listicles, or benefit-driven hooks. The title must be plain text only.
+    4.  Write a detailed, well-structured, and engaging article. Naturally integrate the provided keywords.
+    5.  Format the entire article using clean, standard HTML tags (<p>, <h2>, <h3>, <ul>, <ol>, <li>).
+    6.  Keyword Bolding: Wrap every instance of the provided keywords ('${keywords}') with <strong> tags in the ARTICLE BODY ONLY.
+    7.  Embed the provided URL as a clickable HTML anchor tag within the article text, using one of the most relevant keywords as the anchor text.
+    8.  Ensure there is a well-defined "Conclusion" section at the end of the article, formatted under an <h2> heading.
+    9.  The article content must be approximately ${wordLimit} words.
+    10. Do NOT include any <html>, <head>, <body>, or <style> tags. Only provide the content for the title and article.
 
-    Your final output MUST be structured EXACTLY as follows, using the specified separators. Do not add any text or explanations before or after this structure.
+    Your final output MUST be structured EXACTLY as follows:
 
     ---TITLE_START---
     [Your Generated Title]
@@ -132,7 +129,6 @@ const parseResponse = (responseText: string): ArticleData => {
     return { title, article };
   } catch (e) {
     console.error("Failed to parse LLM response:", e);
-    // Fallback for malformed responses
     return {
         title: "Generated Content (Parsing Failed)",
         article: `<p>The AI response was not in the expected format. Here is the raw output:</p><pre><code>${responseText}</code></pre>`
@@ -143,16 +139,39 @@ const parseResponse = (responseText: string): ArticleData => {
 export const generateArticleContent = async (data: InputFormData): Promise<ArticleData> => {
   const prompt = generatePrompt(data);
   try {
-    // FIX: Use `gemini-3-flash-preview` as per guidelines.
-    const response = await withRetry<GenerateContentResponse>(() => ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: {
-            tools: [{googleSearch: {}}],
+    const response = await withRetry(async () => {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": window.location.origin,
+          "X-Title": "SEO Article Generator",
         },
-    }));
+        body: JSON.stringify({
+          model: "google/gemini-2.0-flash-001", // Using Gemini 2.0 Flash via OpenRouter
+          messages: [
+            {
+              role: "system",
+              content: "You are an expert SEO content writer. You analyze URLs and create optimized articles."
+            },
+            {
+              role: "user",
+              content: prompt
+            }
+          ]
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error?.message || "Failed to generate content");
+      }
+
+      return await res.json();
+    });
     
-    const responseText = response.text;
+    const responseText = response.choices?.[0]?.message?.content;
     if (!responseText) {
       throw new Error("Received an empty response from the API.");
     }
